@@ -1,0 +1,76 @@
+version: 2.1
+
+orbs:
+  aws-ecr: circleci/aws-ecr@7.0.0
+  aws-cli: circleci/aws-cli@2.0.0
+  node: circleci/node@2.0.2
+
+jobs:
+  build_and_push:
+    docker:
+      - image: circleci/python:3.8  # Directly specify the CircleCI Docker image
+    steps:
+      - checkout 
+        
+      - setup_remote_docker
+        
+      - run:
+          name: Install Docker client
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y docker.io
+
+      - run:
+          name: Build Docker Image
+          command: |
+            echo "Building Docker image..."
+            docker build -t mb_taab_arcade .
+            echo "Listing Docker images..."
+            docker images
+            echo "Docker image build complete."
+
+      - run:
+          name: Tagging Image
+          command: |
+            docker tag mb_taab_arcade:latest 184245834456.dkr.ecr.ap-south-1.amazonaws.com/mb_taab_arcade:latest
+
+      - run:
+          name: Install AWS CLI
+          command: |
+            sudo apt install awscli -y 
+
+      - run:
+          name: login to ECR
+          command: |
+            aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 184245834456.dkr.ecr.ap-south-1.amazonaws.com      
+
+      - run:
+          name: Pushing Image to ECR
+          command: |
+            docker push 184245834456.dkr.ecr.ap-south-1.amazonaws.com/mb_taab_arcade:latest
+
+  deploy:
+    machine: 
+      enabled: true
+    steps:
+
+      - run:
+          name: ssh into server and executing deployment script
+          command: |
+            ssh -o StrictHostKeyChecking=no ssh ubuntu@13.127.98.45 "./deploy.sh"
+
+workflows:
+  build-and-deploy:
+    jobs:
+      - build_and_push
+      - hold:
+          type: approval
+          requires:
+          - build_and_push          
+      - deploy:
+          requires:
+          - hold
+    filters:
+      branches:
+        only:
+          - master
